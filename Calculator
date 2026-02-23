@@ -1,0 +1,16 @@
+def calc():
+    num1 = float(input("Enter first number: "))
+    op = input("Enter operator (+, -, *, /): ") 
+    num2 =  float(input("Enter second number: "))
+    if op == "+":5
+        print(num1 + num2)
+    elif op == "-":
+        print(num1 - num2)
+    elif op == "*":
+        print(num1 * num2)
+    elif op == "/":
+        print(num1 / num2)
+    else:
+        print("Invalid operator")
+        #        calc()  # Call the function again for a valid operator
+calc()
