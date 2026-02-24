@@ -1,4 +1,4 @@
-# Hard-coded price
+ch# Hard-coded price
 price = 6700
 
 # Assume customer pays 10000 shillings
