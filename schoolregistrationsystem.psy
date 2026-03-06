@@ -1,0 +1,384 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import sqlite3
+import os
+import hashlib
+import shutil
+
+DB = "school_advanced.db"
+FILES_DIR = "student_files"
+PHOTO_DIR = "student_photos"
+
+os.makedirs(FILES_DIR, exist_ok=True)
+os.makedirs(PHOTO_DIR, exist_ok=True)
+
+# ---------------- DATABASE ---------------- #
+
+conn = sqlite3.connect(DB)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users(
+username TEXT PRIMARY KEY,
+password TEXT,
+role TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS students(
+student_id TEXT PRIMARY KEY,
+name TEXT,
+age INTEGER,
+course TEXT,
+photo TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS grades(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+student_id TEXT,
+subject TEXT,
+grade TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS files(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+student_id TEXT,
+file_name TEXT
+)
+""")
+
+conn.commit()
+
+# ---------------- PASSWORD SECURITY ---------------- #
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+cursor.execute(
+    "INSERT OR IGNORE INTO users VALUES(?,?,?)",
+    ("admin", hash_password("admin123"), "admin")
+)
+
+conn.commit()
+
+# ---------------- LOGIN ---------------- #
+
+def login():
+
+    username = username_entry.get()
+    password = hash_password(password_entry.get())
+
+    cursor.execute(
+        "SELECT role FROM users WHERE username=? AND password=?",
+        (username, password)
+    )
+
+    result = cursor.fetchone()
+
+    if result:
+        role = result[0]
+        root.destroy()
+
+        if role == "admin":
+            admin_panel()
+
+        elif role == "teacher":
+            teacher_panel()
+
+        elif role == "student":
+            student_panel()
+
+    else:
+        messagebox.showerror("Error", "Invalid Login")
+
+# ---------------- STUDENT FUNCTIONS ---------------- #
+
+def add_student():
+
+    sid = sid_entry.get()
+    name = name_entry.get()
+    age = age_entry.get()
+    course = course_entry.get()
+
+    cursor.execute(
+        "INSERT INTO students VALUES(?,?,?,?,?)",
+        (sid, name, age, course, "")
+    )
+
+    conn.commit()
+
+    os.makedirs(f"{FILES_DIR}/{sid}", exist_ok=True)
+
+    messagebox.showinfo("Success", "Student Added")
+
+def delete_student():
+
+    sid = sid_entry.get()
+
+    cursor.execute("DELETE FROM students WHERE student_id=?", (sid,))
+    conn.commit()
+
+    shutil.rmtree(f"{FILES_DIR}/{sid}", ignore_errors=True)
+
+    messagebox.showinfo("Deleted", "Student Removed")
+
+def update_student():
+
+    sid = sid_entry.get()
+    name = name_entry.get()
+    age = age_entry.get()
+    course = course_entry.get()
+
+    cursor.execute("""
+    UPDATE students
+    SET name=?, age=?, course=?
+    WHERE student_id=?
+    """, (name, age, course, sid))
+
+    conn.commit()
+
+    messagebox.showinfo("Updated", "Student Updated")
+
+# ---------------- PHOTO ---------------- #
+
+def upload_photo():
+
+    sid = sid_entry.get()
+
+    file_path = filedialog.askopenfilename()
+
+    if not file_path:
+        return
+
+    filename = os.path.basename(file_path)
+    dest = f"{PHOTO_DIR}/{filename}"
+
+    shutil.copy(file_path, dest)
+
+    cursor.execute(
+        "UPDATE students SET photo=? WHERE student_id=?",
+        (filename, sid)
+    )
+
+    conn.commit()
+
+    messagebox.showinfo("Success", "Photo Uploaded")
+
+# ---------------- FILE UPLOAD ---------------- #
+
+def upload_report():
+
+    sid = sid_entry.get()
+
+    file_path = filedialog.askopenfilename()
+
+    if not file_path:
+        return
+
+    filename = os.path.basename(file_path)
+
+    os.makedirs(f"{FILES_DIR}/{sid}", exist_ok=True)
+
+    dest = f"{FILES_DIR}/{sid}/{filename}"
+
+    shutil.copy(file_path, dest)
+
+    cursor.execute(
+        "INSERT INTO files(student_id,file_name) VALUES(?,?)",
+        (sid, filename)
+    )
+
+    conn.commit()
+
+    messagebox.showinfo("Uploaded", "Report Uploaded")
+
+# ---------------- GRADES ---------------- #
+
+def add_grade():
+
+    sid = sid_entry.get()
+    subject = subject_entry.get()
+    grade = grade_entry.get()
+
+    cursor.execute(
+        "INSERT INTO grades(student_id,subject,grade) VALUES(?,?,?)",
+        (sid, subject, grade)
+    )
+
+    conn.commit()
+
+    messagebox.showinfo("Success", "Grade Added")
+
+# ---------------- LIST STUDENTS ---------------- #
+
+def list_students(tree):
+
+    for row in tree.get_children():
+        tree.delete(row)
+
+    cursor.execute("SELECT student_id,name,age,course FROM students")
+
+    for row in cursor.fetchall():
+        tree.insert("", "end", values=row)
+
+# ---------------- SEARCH ---------------- #
+
+def search_student(tree):
+
+    keyword = search_entry.get()
+
+    for row in tree.get_children():
+        tree.delete(row)
+
+    cursor.execute(
+        "SELECT student_id,name,age,course FROM students WHERE name LIKE ?",
+        ('%'+keyword+'%',)
+    )
+
+    for row in cursor.fetchall():
+        tree.insert("", "end", values=row)
+
+# ---------------- DASHBOARD ---------------- #
+
+def dashboard():
+
+    cursor.execute("SELECT COUNT(*) FROM students")
+    total_students = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM grades")
+    total_grades = cursor.fetchone()[0]
+
+    messagebox.showinfo(
+        "Dashboard",
+        f"Total Students: {total_students}\nTotal Grades Recorded: {total_grades}"
+    )
+
+# ---------------- ADMIN PANEL ---------------- #
+
+def admin_panel():
+
+    win = tk.Tk()
+    win.title("Admin Dashboard")
+    win.geometry("900x600")
+
+    global sid_entry,name_entry,age_entry,course_entry
+    global subject_entry,grade_entry,search_entry
+
+    frame = tk.Frame(win)
+    frame.pack()
+
+    tk.Label(frame,text="Student ID").grid(row=0,column=0)
+    sid_entry = tk.Entry(frame)
+    sid_entry.grid(row=0,column=1)
+
+    tk.Label(frame,text="Name").grid(row=1,column=0)
+    name_entry = tk.Entry(frame)
+    name_entry.grid(row=1,column=1)
+
+    tk.Label(frame,text="Age").grid(row=2,column=0)
+    age_entry = tk.Entry(frame)
+    age_entry.grid(row=2,column=1)
+
+    tk.Label(frame,text="Course").grid(row=3,column=0)
+    course_entry = tk.Entry(frame)
+    course_entry.grid(row=3,column=1)
+
+    tk.Button(frame,text="Add Student",command=add_student).grid(row=4,column=0)
+    tk.Button(frame,text="Update",command=update_student).grid(row=4,column=1)
+    tk.Button(frame,text="Delete",command=delete_student).grid(row=4,column=2)
+
+    tk.Button(frame,text="Upload Photo",command=upload_photo).grid(row=5,column=0)
+    tk.Button(frame,text="Upload Report",command=upload_report).grid(row=5,column=1)
+
+    tk.Label(frame,text="Subject").grid(row=6,column=0)
+    subject_entry = tk.Entry(frame)
+    subject_entry.grid(row=6,column=1)
+
+    tk.Label(frame,text="Grade").grid(row=7,column=0)
+    grade_entry = tk.Entry(frame)
+    grade_entry.grid(row=7,column=1)
+
+    tk.Button(frame,text="Add Grade",command=add_grade).grid(row=8,column=1)
+
+    tk.Button(frame,text="Dashboard Stats",command=dashboard).grid(row=9,column=1)
+
+    search_entry = tk.Entry(frame)
+    search_entry.grid(row=10,column=0)
+
+    tree = ttk.Treeview(win,columns=(1,2,3,4),show="headings")
+    tree.heading(1,text="ID")
+    tree.heading(2,text="Name")
+    tree.heading(3,text="Age")
+    tree.heading(4,text="Course")
+
+    tree.pack(fill="both",expand=True)
+
+    tk.Button(frame,text="Search",command=lambda:search_student(tree)).grid(row=10,column=1)
+    tk.Button(frame,text="Refresh",command=lambda:list_students(tree)).grid(row=10,column=2)
+
+    win.mainloop()
+
+# ---------------- TEACHER PANEL ---------------- #
+
+def teacher_panel():
+
+    win = tk.Tk()
+    win.title("Teacher Panel")
+    win.geometry("600x400")
+
+    tree = ttk.Treeview(win,columns=(1,2,3,4),show="headings")
+
+    tree.heading(1,text="ID")
+    tree.heading(2,text="Name")
+    tree.heading(3,text="Age")
+    tree.heading(4,text="Course")
+
+    tree.pack(fill="both",expand=True)
+
+    tk.Button(win,text="View Students",command=lambda:list_students(tree)).pack()
+
+    win.mainloop()
+
+# ---------------- STUDENT PANEL ---------------- #
+
+def student_panel():
+
+    win = tk.Tk()
+    win.title("Student Portal")
+    win.geometry("500x300")
+
+    tree = ttk.Treeview(win,columns=(1,2,3,4),show="headings")
+
+    tree.heading(1,text="ID")
+    tree.heading(2,text="Name")
+    tree.heading(3,text="Age")
+    tree.heading(4,text="Course")
+
+    tree.pack(fill="both",expand=True)
+
+    tk.Button(win,text="View Students",command=lambda:list_students(tree)).pack()
+
+    win.mainloop()
+
+# ---------------- LOGIN WINDOW ---------------- #
+
+root = tk.Tk()
+root.title("Student Management System")
+root.geometry("300x200")
+
+tk.Label(root,text="Username").pack()
+username_entry = tk.Entry(root)
+username_entry.pack()
+
+tk.Label(root,text="Password").pack()
+password_entry = tk.Entry(root,show="*")
+password_entry.pack()
+
+tk.Button(root,text="Login",command=login).pack(pady=10)
+
+root.mainloop()
